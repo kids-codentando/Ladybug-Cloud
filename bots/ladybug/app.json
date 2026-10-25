@@ -1,0 +1,25 @@
+{
+  "name": "Ladybug Mini",
+  "description": "Ladybug Mini — WhatsApp MD bot by Ntandomods (Baileys)",
+  "repository": "",
+  "keywords": [
+    "whatsapp",
+    "baileys",
+    "bot",
+    "node",
+    "ladybug",
+    "ntandomods"
+  ],
+  "buildpacks": [
+    {
+      "url": "https://github.com/heroku/heroku-buildpack-nodejs.git"
+    }
+  ],
+  "env": {
+    "SESSION_ID": {
+      "description": "Ladybug session string (e.g. Ladybug!<base64_compressed_data>)",
+      "required": false,
+      "value": ""
+    }
+  }
+}

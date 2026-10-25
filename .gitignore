@@ -1,7 +1,5 @@
 node_modules/
 data/
-bots/ladybug/*
-!bots/ladybug/.gitkeep
 .env
 *.log
 .DS_Store

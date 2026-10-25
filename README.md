@@ -33,6 +33,21 @@ Built by **Ntandomods** · Deployable on **Render** in one click.
 4. Wait for the first deploy, open the URL, log in as **Ntando / mods**.
 5. Go to **Admin → Installer → Install from GitHub**. Done.
 
+### Self-healing bot dependencies
+
+The bot source is installed without its `node_modules` (they are gitignored), and on an
+ephemeral filesystem they vanish on every redeploy. The platform now repairs itself:
+
+- Installing the bot (GitHub or ZIP) automatically starts `npm install` in `bots/ladybug`.
+- Starting a bot checks `node_modules` first; if anything is missing it installs the
+  dependencies, streams the output into the bot log as `[deps] ...`, then starts the bot.
+- On boot, any bot that was running is only resumed after dependencies are verified.
+- If a crash is caused by `Cannot find module`, the host stops the restart loop and tells
+  you to run **Admin → Bot Installer → Install Dependencies** instead of retrying 5 times.
+- Lifecycle scripts are allowed during install (`NPM_CONFIG_DANGEROUSLY_ALLOW_ALL_SCRIPTS`),
+  otherwise npm 11.6+/12 skips them and native modules such as `sharp`, `canvas` and
+  `ffmpeg-static` end up broken.
+
 > **Free vs persistent data:** Render's free plan has **no persistent disk**, so accounts, bots and session folders live on the ephemeral filesystem and reset whenever the service redeploys or wakes from sleep. That is fine for trying it out. For permanent storage, switch the service to `plan: starter`, uncomment the `disk:` block in `render.yaml`, and set `DATA_DIR=/var/data` and `BOT_DIR=/var/data/bots/ladybug`.
 
 ### Option B — Manual Web Service

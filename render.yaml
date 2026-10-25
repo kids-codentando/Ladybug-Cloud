@@ -4,13 +4,19 @@ services:
     runtime: node
     plan: free
     region: oregon
-    buildCommand: npm install
+    buildCommand: npm install && npm --prefix bots/ladybug install --omit=dev --no-audit --no-fund
     startCommand: node server.js
     healthCheckPath: /healthz
     autoDeploy: true
     envVars:
       - key: NODE_ENV
         value: production
+      # npm 11.6+/12 skips lifecycle scripts by default; the bot needs them
+      # for sharp, canvas, ffmpeg-static and baileys.
+      - key: NPM_CONFIG_DANGEROUSLY_ALLOW_ALL_SCRIPTS
+        value: "true"
+      - key: PUPPETEER_SKIP_DOWNLOAD
+        value: "true"
       - key: ADMIN_USERNAME
         value: Ntando
       - key: ADMIN_PASSWORD

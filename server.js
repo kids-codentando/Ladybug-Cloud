@@ -271,7 +271,7 @@ app.post('/api/bots/:id/start', requireAuth, (req, res) => {
   db.updateBot(bot.id, { status: 'running' });
   const r = bots.start(db.findBotById(bot.id));
   if (!r.ok) return res.status(400).json({ error: r.error });
-  res.json({ ok: true, status: bots.status(bot.id) });
+  res.json({ ok: true, preparing: !!r.preparing, message: r.message, status: bots.status(bot.id) });
 });
 
 app.post('/api/bots/:id/stop', requireAuth, (req, res) => {
@@ -485,13 +485,25 @@ const server = app.listen(PORT, () => {
   console.log(`   Bot code installed: ${installer.getState().installed ? 'yes' : 'no'}`);
 });
 
-// Resume bots that were running before a restart
-setTimeout(() => {
-  for (const bot of db.data.bots) {
-    if (bot.status === 'running' && bot.sessionId) {
-      console.log(`[boot] Resuming bot "${bot.name}"`);
-      bots.start(bot);
+// Resume bots that were running before a restart. On ephemeral filesystems the
+// bot's node_modules may be gone, so make sure they exist first.
+setTimeout(async () => {
+  const pending = db.data.bots.filter((b) => b.status === 'running' && b.sessionId);
+  if (!pending.length) return;
+
+  if (installer.getState().installed && !installer.depsInstalled()) {
+    console.log('[boot] Bot dependencies missing — installing before resume...');
+    try {
+      await installer.ensureDependencies((line) => console.log(`[deps] ${line}`));
+      console.log('[boot] Dependencies ready.');
+    } catch (e) {
+      console.error(`[boot] Dependency install failed: ${e.message}`);
     }
+  }
+
+  for (const bot of pending) {
+    console.log(`[boot] Resuming bot "${bot.name}"`);
+    bots.start(bot);
   }
 }, 3000);
 

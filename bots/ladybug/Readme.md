@@ -1,0 +1,211 @@
+<div align="center">
+
+## 🐞 Ladybug Mini
+
+[![Made with Baileys](https://img.shields.io/badge/Made%20with-Baileys-00bcd4?style=for-the-badge)](https://github.com/WhiskeySockets/Baileys)
+[![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
+[![Made under Ntandomods](https://img.shields.io/badge/Made%20under-Ntandomods-e11d48?style=for-the-badge)](https://github.com/Ntandomods)
+
+<img src="utils/bot_image.jpg" alt="Ladybug Mini" width="280">
+
+</div>
+
+**Ladybug Mini** is a fast, lightweight WhatsApp MD bot built on top of the **Baileys** library, proudly crafted under the **Ntandomods** brand. It is designed to be quick to deploy, easy to customize, and packed with powerful features — without ever touching the core code.
+
+This project is **fully open source** — you can modify it, rebrand it, and build your **own bot** from this codebase **free of cost**, without needing any permission. All commands and the overall structure are written to make customization (bot image, prefix, name, features, etc.) as easy as possible.
+
+---
+
+## ✨ Features
+
+- **🐞 Ladybug Branding** – a bold, custom neon ladybug logo and consistent Ntandomods identity across menus, stickers and captions.
+- **Fully Open Source** – the entire codebase is editable; host it anywhere (Heroku, panel, VPS, etc.).
+- **Easy Customization via Commands** – change the **bot image**, **prefix**, **channel/newsletter**, **bot name**, etc. with simple commands.
+- **Modular Command System** – commands are organized in the `commands` folder for easy editing.
+- **AI & Chatbot** – AI chat, magic studio and chatbot integrations.
+- **Media Downloaders** – YouTube song/video, TikTok, Instagram, Facebook, Twitter and more.
+- **Group Management** – antilink, antispam, antidelete, welcome/goodbye, promote/demote, mute and more.
+- **Games & Economy** – RPG, slots, coinflip, hangman, quiz, fishing, hunting and a full economy system.
+- **Optimized for Stability** – RAM-optimized media handling (streaming, temp cleanup) and better session handling via `sessionID` in `config.js`.
+
+---
+
+### 1. Fork the Repository
+
+<div align="center">
+
+<a href="https://github.com/kids-codentando/Ladybug-Mini/fork" target="_blank">
+  <img src="https://img.shields.io/badge/Fork%20Repository-GitHub-181717?style=for-the-badge&logo=github&logoColor=white" alt="Fork on GitHub">
+</a>
+
+</div>
+
+> This creates your own copy of `Ladybug-Mini` under your GitHub account.
+
+---
+
+### 2. Get Pair Code
+
+Deploy a small helper to generate a **pair code** and obtain your session string.
+
+After pairing, you will receive a **session string** starting with:
+
+```text
+Ladybug!H4....
+```
+
+Copy that full string and paste it into `config.js`:
+
+```js
+sessionID: 'Ladybug!H4.....'
+```
+
+Or set it via the `SESSION_ID` environment variable when hosting.
+
+> ℹ️ For backward compatibility, session strings beginning with `KnightBot!` are still accepted.
+
+---
+
+### 3. Deploy on Panel (Katabump, etc.)
+
+For a full step-by-step deployment tutorial (panels / VPS / Heroku), add or update your YouTube guide here:
+
+- **YouTube Tutorial:** *(coming soon)*
+
+---
+
+## 🛠 Local Setup
+
+### 1️⃣ Clone the repository
+
+```bash
+git clone https://github.com/kids-codentando/Ladybug-Mini.git
+cd Ladybug-Mini
+```
+
+### 2️⃣ Install dependencies
+
+```bash
+npm install
+```
+
+### 3️⃣ Configure session
+
+Edit `config.js`:
+
+- **Option A: Use session string**
+
+  ```js
+  sessionID: 'Ladybug!H4.....'
+  ```
+
+- **Option B: Scan QR**
+
+  ```js
+  sessionID: ''
+  ```
+
+  Run the bot and scan the QR from the terminal.
+
+### 4️⃣ Run the bot
+
+```bash
+node index.js
+```
+
+When the bot starts:
+
+- If `sessionID` is empty, a **QR code** will appear in the terminal – scan it using **Linked Devices** in WhatsApp.
+- If `sessionID` is set, it will log in using that session string.
+
+---
+
+## 🐞 Command Highlights
+
+| Category | Example Commands |
+|----------|------------------|
+| General | `.menu` `.ladybug` `.ping` `.uptime` `.owner` `.sticker` |
+| AI | `.ai` `.chatbot` `.magicstudio` |
+| Media | `.song` `.video` `.tiktok` `.instagram` `.facebook` `.twitter` |
+| Admin | `.antilink` `.antispam` `.welcome` `.promote` `.kick` `.mute` |
+| Owner | `.setbotname` `.setprefix` `.broadcast` `.restart` `.update` |
+| Games | `.tictactoe` `.coinflip` `.hangman` `.slots` `.rpg` |
+| Economy | `.balance` `.daily` `.work` `.bet` `.shop` |
+
+> Type `.menu` in WhatsApp to see the complete, live command list.
+
+---
+
+## 🌐 Community
+
+<div align="center">
+
+<a href="https://github.com/Ntandomods" target="_blank">
+  <img src="https://img.shields.io/badge/GitHub-Ntandomods-181717?style=for-the-badge&logo=github&logoColor=white" alt="GitHub">
+</a>
+
+<a href="https://youtube.com/@ntandomods" target="_blank">
+  <img src="https://img.shields.io/badge/YouTube-Ntandomods-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="YouTube">
+</a>
+
+<a href="https://instagram.com/ntandomods" target="_blank">
+  <img src="https://img.shields.io/badge/Instagram-Ntandomods-E4405F?style=for-the-badge&logo=instagram&logoColor=white" alt="Instagram">
+</a>
+
+</div>
+
+---
+
+## 🙏 Credits
+
+- **Ntandomods** – Rebranding, Ladybug Mini identity & maintenance
+- **Mr Unique Hacker** – Original KnightBot-Mini base & maintainer
+- **Baileys** – WhatsApp Web API library (`@whiskeysockets/baileys`)
+- Other open-source libraries listed in `package.json`
+
+---
+
+## ⚠️ Important Warning
+
+- This bot is created **for educational purposes only**.
+- This is **NOT** an official WhatsApp bot.
+- Using third-party bots **may violate WhatsApp's Terms of Service** and can lead to your account being **banned**.
+
+> You use this bot **at your own risk**.
+> The developers are **not responsible** for any bans, issues, or damages resulting from its use.
+
+---
+
+## 📝 Legal
+
+- This project is **not affiliated with, authorized, maintained, sponsored, or endorsed** by WhatsApp Inc. or any of its affiliates or subsidiaries.
+- This is **independent and unofficial software**.
+- **Do not spam** people using this bot.
+- **Do not** use this bot for bulk messaging, harassment, or any **illegal activities**.
+- The developers assume **no liability** and are **not responsible** for any misuse or damage caused by this program.
+
+---
+
+## 📄 License (MIT)
+
+This project is licensed under the **MIT License**.
+
+You must:
+
+- Use this software in compliance with **all applicable laws and regulations**.
+- Keep the **original license and copyright** notices.
+- **Credit the original authors**.
+- **Not** use this for spam, abuse, or malicious purposes.
+
+---
+
+## 📜 Copyright Notice
+
+Copyright (c) **2026 Ntandomods**.
+All rights reserved.
+
+This project contains code from various open-source projects and AI tools, including but not limited to:
+
+- **Baileys** – MIT License
+- Other libraries as listed in `package.json`
