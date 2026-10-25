@@ -21,11 +21,15 @@ services:
         value: "1"
       - key: PRO_BOT_LIMIT
         value: "10"
+      # Free plan has no persistent disk, so data lives on the ephemeral
+      # filesystem and resets on redeploy/sleep. To keep users + sessions
+      # permanently, upgrade to plan: starter and uncomment the disk block
+      # below, then set DATA_DIR=/var/data and BOT_DIR=/var/data/bots/ladybug.
       - key: DATA_DIR
-        value: /var/data
+        value: /opt/render/project/src/data
       - key: BOT_DIR
-        value: /var/data/bots/ladybug
-    disk:
-      name: ladybug-data
-      mountPath: /var/data
-      sizeGB: 1
+        value: /opt/render/project/src/bots/ladybug
+    # disk:
+    #   name: ladybug-data
+    #   mountPath: /var/data
+    #   sizeGB: 1

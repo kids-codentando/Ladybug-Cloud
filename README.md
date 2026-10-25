@@ -31,21 +31,21 @@ Built by **Ntandomods** · Deployable on **Render** in one click.
 4. Wait for the first deploy, open the URL, log in as **Ntando / mods**.
 5. Go to **Admin → Installer → Install from GitHub**. Done.
 
-The blueprint creates a 1 GB persistent disk at `/var/data` so users, bots and sessions survive redeploys.
+> **Free vs persistent data:** Render's free plan has **no persistent disk**, so accounts, bots and session folders live on the ephemeral filesystem and reset whenever the service redeploys or wakes from sleep. That is fine for trying it out. For permanent storage, switch the service to `plan: starter`, uncomment the `disk:` block in `render.yaml`, and set `DATA_DIR=/var/data` and `BOT_DIR=/var/data/bots/ladybug`.
 
 ### Option B — Manual Web Service
 
 - **Environment:** Node
 - **Build:** `npm install`
 - **Start:** `node server.js`
-- **Disk:** add a disk mounted at `/var/data` (1 GB)
+- **Disk:** optional — add a 1 GB disk at `/var/data` only if you use a paid instance (free plans can't mount disks)
 - **Env vars:**
 
 ```
 ADMIN_USERNAME=Ntando
 ADMIN_PASSWORD=mods
 SESSION_SECRET=<random long string>
-DATA_DIR=/var/data
+DATA_DIR=/var/data          # or ./data on the free plan
 BOT_DIR=/var/data/bots/ladybug
 NODE_ENV=production
 ```
