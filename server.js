@@ -1,0 +1,415 @@
+/**
+ * Ladybug Cloud — Multi-tenant WhatsApp bot hosting
+ * Made under Ntandomods
+ */
+require('dotenv').config();
+
+const express = require('express');
+const session = require('express-session');
+const bcrypt = require('bcryptjs');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
+const os = require('os');
+
+const db = require('./lib/store');
+const bots = require('./lib/bots');
+const installer = require('./lib/installer');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'Ntando';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'mods';
+const FREE_BOT_LIMIT = parseInt(process.env.FREE_BOT_LIMIT || '1', 10);
+const PRO_BOT_LIMIT = parseInt(process.env.PRO_BOT_LIMIT || '10', 10);
+
+// ---------------------------------------------------------------- middleware
+app.set('trust proxy', 1);
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: true }));
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex'),
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production' && process.env.COOKIE_SECURE !== 'false',
+      maxAge: 1000 * 60 * 60 * 24 * 7,
+    },
+  })
+);
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 60 * 1024 * 1024 }, // 60MB
+});
+
+// ---------------------------------------------------------------- helpers
+const uid = () => crypto.randomBytes(9).toString('hex');
+
+function publicUser(u) {
+  return {
+    id: u.id,
+    username: u.username,
+    email: u.email,
+    plan: u.plan || 'free',
+    isAdmin: !!u.isAdmin,
+    botLimit: u.botLimit || (u.plan === 'pro' ? PRO_BOT_LIMIT : FREE_BOT_LIMIT),
+    createdAt: u.createdAt,
+    lastLogin: u.lastLogin || null,
+  };
+}
+
+function requireAuth(req, res, next) {
+  if (!req.session.userId) return res.status(401).json({ error: 'Not authenticated' });
+  const user = db.findUserById(req.session.userId);
+  if (!user) {
+    req.session.destroy(() => {});
+    return res.status(401).json({ error: 'Session expired' });
+  }
+  req.user = user;
+  next();
+}
+
+function requireAdmin(req, res, next) {
+  requireAuth(req, res, () => {
+    if (!req.user.isAdmin) return res.status(403).json({ error: 'Admin access required' });
+    next();
+  });
+}
+
+function botView(bot) {
+  const st = bots.status(bot.id);
+  return {
+    id: bot.id,
+    name: bot.name,
+    sessionIdMasked: bot.sessionId
+      ? `${bot.sessionId.slice(0, 12)}${'•'.repeat(Math.max(0, Math.min(20, bot.sessionId.length - 12)))}`
+      : '',
+    hasSession: !!bot.sessionId,
+    autoRestart: bot.autoRestart !== false,
+    createdAt: bot.createdAt,
+    status: st.status,
+    running: st.running,
+    pid: st.pid,
+    startedAt: st.startedAt,
+    restarts: st.restarts,
+    lastError: st.lastError,
+  };
+}
+
+// ---------------------------------------------------------------- bootstrap admin
+(function ensureAdmin() {
+  let admin = db.findUserByUsername(ADMIN_USERNAME);
+  if (!admin) {
+    admin = {
+      id: uid(),
+      username: ADMIN_USERNAME,
+      email: 'admin@ntandomods.local',
+      passwordHash: bcrypt.hashSync(ADMIN_PASSWORD, 10),
+      isAdmin: true,
+      plan: 'pro',
+      botLimit: 999,
+      createdAt: new Date().toISOString(),
+    };
+    db.addUser(admin);
+    console.log(`[boot] Admin account created: ${ADMIN_USERNAME}`);
+  } else if (!admin.isAdmin) {
+    db.updateUser(admin.id, { isAdmin: true, plan: 'pro', botLimit: 999 });
+  }
+})();
+
+// ---------------------------------------------------------------- auth routes
+app.post('/api/auth/register', (req, res) => {
+  const { username, email, password } = req.body || {};
+  if (!username || !password) return res.status(400).json({ error: 'Username and password are required' });
+  if (String(username).length < 3) return res.status(400).json({ error: 'Username must be at least 3 characters' });
+  if (String(password).length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  if (db.findUserByUsername(username)) return res.status(409).json({ error: 'Username already taken' });
+  if (email && db.findUserByEmail(email)) return res.status(409).json({ error: 'Email already registered' });
+
+  const user = {
+    id: uid(),
+    username: String(username).trim(),
+    email: email ? String(email).trim() : null,
+    passwordHash: bcrypt.hashSync(String(password), 10),
+    isAdmin: false,
+    plan: 'free',
+    botLimit: FREE_BOT_LIMIT,
+    createdAt: new Date().toISOString(),
+  };
+  db.addUser(user);
+  req.session.userId = user.id;
+  res.json({ ok: true, user: publicUser(user) });
+});
+
+app.post('/api/auth/login', (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password) return res.status(400).json({ error: 'Username and password are required' });
+
+  const user = db.findUserByUsername(username);
+  if (!user || !bcrypt.compareSync(String(password), user.passwordHash)) {
+    return res.status(401).json({ error: 'Invalid username or password' });
+  }
+  db.updateUser(user.id, { lastLogin: new Date().toISOString() });
+  req.session.userId = user.id;
+  res.json({ ok: true, user: publicUser(user) });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  req.session.destroy(() => res.json({ ok: true }));
+});
+
+app.get('/api/auth/me', (req, res) => {
+  if (!req.session.userId) return res.json({ user: null });
+  const user = db.findUserById(req.session.userId);
+  res.json({ user: user ? publicUser(user) : null });
+});
+
+// ---------------------------------------------------------------- user bots
+app.get('/api/bots', requireAuth, (req, res) => {
+  const list = db.botsForUser(req.user.id).map(botView);
+  res.json({ bots: list, limit: req.user.botLimit || FREE_BOT_LIMIT });
+});
+
+app.post('/api/bots', requireAuth, (req, res) => {
+  const { name, sessionId } = req.body || {};
+  const owned = db.botsForUser(req.user.id);
+  const limit = req.user.botLimit || FREE_BOT_LIMIT;
+  if (owned.length >= limit) {
+    return res.status(403).json({ error: `Bot limit reached (${limit}). Upgrade your plan or contact the admin.` });
+  }
+  if (!name || !String(name).trim()) return res.status(400).json({ error: 'Bot name is required' });
+  if (!sessionId || !String(sessionId).trim()) return res.status(400).json({ error: 'Session ID is required' });
+
+  const bot = {
+    id: uid(),
+    userId: req.user.id,
+    name: String(name).trim().slice(0, 40),
+    sessionId: String(sessionId).trim(),
+    autoRestart: true,
+    createdAt: new Date().toISOString(),
+    status: 'stopped',
+  };
+  db.addBot(bot);
+  res.json({ ok: true, bot: botView(bot) });
+});
+
+function ownBot(req, res) {
+  const bot = db.findBotById(req.params.id);
+  if (!bot) {
+    res.status(404).json({ error: 'Bot not found' });
+    return null;
+  }
+  if (bot.userId !== req.user.id && !req.user.isAdmin) {
+    res.status(403).json({ error: 'Not your bot' });
+    return null;
+  }
+  return bot;
+}
+
+app.patch('/api/bots/:id', requireAuth, (req, res) => {
+  const bot = ownBot(req, res);
+  if (!bot) return;
+  const patch = {};
+  if (req.body.name) patch.name = String(req.body.name).trim().slice(0, 40);
+  if (typeof req.body.sessionId === 'string' && req.body.sessionId.trim()) {
+    patch.sessionId = req.body.sessionId.trim();
+  }
+  if (typeof req.body.autoRestart === 'boolean') patch.autoRestart = req.body.autoRestart;
+  db.updateBot(bot.id, patch);
+  res.json({ ok: true, bot: botView(db.findBotById(bot.id)) });
+});
+
+app.delete('/api/bots/:id', requireAuth, (req, res) => {
+  const bot = ownBot(req, res);
+  if (!bot) return;
+  bots.stop(bot.id);
+  db.deleteBot(bot.id);
+  res.json({ ok: true });
+});
+
+app.post('/api/bots/:id/start', requireAuth, (req, res) => {
+  const bot = ownBot(req, res);
+  if (!bot) return;
+  db.updateBot(bot.id, { status: 'running' });
+  const r = bots.start(db.findBotById(bot.id));
+  if (!r.ok) return res.status(400).json({ error: r.error });
+  res.json({ ok: true, status: bots.status(bot.id) });
+});
+
+app.post('/api/bots/:id/stop', requireAuth, (req, res) => {
+  const bot = ownBot(req, res);
+  if (!bot) return;
+  db.updateBot(bot.id, { status: 'stopped' });
+  bots.stop(bot.id);
+  res.json({ ok: true, status: bots.status(bot.id) });
+});
+
+app.post('/api/bots/:id/restart', requireAuth, (req, res) => {
+  const bot = ownBot(req, res);
+  if (!bot) return;
+  db.updateBot(bot.id, { status: 'running' });
+  bots.restart(db.findBotById(bot.id));
+  res.json({ ok: true });
+});
+
+app.get('/api/bots/:id/logs', requireAuth, (req, res) => {
+  const bot = ownBot(req, res);
+  if (!bot) return;
+  res.json({ logs: bots.logs(bot.id, parseInt(req.query.limit || '200', 10)), status: bots.status(bot.id) });
+});
+
+app.delete('/api/bots/:id/logs', requireAuth, (req, res) => {
+  const bot = ownBot(req, res);
+  if (!bot) return;
+  bots.clearLogs(bot.id);
+  res.json({ ok: true });
+});
+
+// ---------------------------------------------------------------- admin
+app.get('/api/admin/stats', requireAdmin, (req, res) => {
+  const data = db.data;
+  const mem = process.memoryUsage();
+  res.json({
+    users: data.users.length,
+    admins: data.users.filter((u) => u.isAdmin).length,
+    bots: data.bots.length,
+    running: bots.runningCount(),
+    installed: installer.getState().installed,
+    uptime: process.uptime(),
+    memory: { rss: Math.round(mem.rss / 1048576), heap: Math.round(mem.heapUsed / 1048576) },
+    loadavg: os.loadavg().map((n) => Math.round(n * 100) / 100),
+    platform: `${os.type()} ${os.release()}`,
+    node: process.version,
+    cpus: os.cpus().length,
+  });
+});
+
+app.get('/api/admin/users', requireAdmin, (req, res) => {
+  const users = db.data.users.map((u) => ({
+    ...publicUser(u),
+    botCount: db.botsForUser(u.id).length,
+  }));
+  res.json({ users });
+});
+
+app.patch('/api/admin/users/:id', requireAdmin, (req, res) => {
+  const u = db.findUserById(req.params.id);
+  if (!u) return res.status(404).json({ error: 'User not found' });
+  const patch = {};
+  if (req.body.plan) {
+    patch.plan = req.body.plan;
+    patch.botLimit = req.body.plan === 'pro' ? PRO_BOT_LIMIT : FREE_BOT_LIMIT;
+  }
+  if (typeof req.body.botLimit === 'number') patch.botLimit = req.body.botLimit;
+  if (typeof req.body.isAdmin === 'boolean') patch.isAdmin = req.body.isAdmin;
+  if (req.body.password) patch.passwordHash = bcrypt.hashSync(String(req.body.password), 10);
+  db.updateUser(u.id, patch);
+  res.json({ ok: true, user: publicUser(db.findUserById(u.id)) });
+});
+
+app.delete('/api/admin/users/:id', requireAdmin, (req, res) => {
+  const u = db.findUserById(req.params.id);
+  if (!u) return res.status(404).json({ error: 'User not found' });
+  if (u.id === req.user.id) return res.status(400).json({ error: 'You cannot delete your own admin account' });
+  for (const b of db.botsForUser(u.id)) bots.stop(b.id);
+  db.deleteUser(u.id);
+  res.json({ ok: true });
+});
+
+app.get('/api/admin/bots', requireAdmin, (req, res) => {
+  const list = db.data.bots.map((b) => {
+    const owner = db.findUserById(b.userId);
+    return { ...botView(b), owner: owner ? owner.username : 'deleted' };
+  });
+  res.json({ bots: list });
+});
+
+app.post('/api/admin/bots/:id/stop', requireAdmin, (req, res) => {
+  const bot = db.findBotById(req.params.id);
+  if (!bot) return res.status(404).json({ error: 'Bot not found' });
+  db.updateBot(bot.id, { status: 'stopped' });
+  bots.stop(bot.id);
+  res.json({ ok: true });
+});
+
+app.delete('/api/admin/bots/:id', requireAdmin, (req, res) => {
+  const bot = db.findBotById(req.params.id);
+  if (!bot) return res.status(404).json({ error: 'Bot not found' });
+  bots.stop(bot.id);
+  db.deleteBot(bot.id);
+  res.json({ ok: true });
+});
+
+// --- bot code installer ---
+app.get('/api/admin/installer', requireAdmin, (req, res) => {
+  res.json(installer.getState());
+});
+
+app.post('/api/admin/installer/github', requireAdmin, async (req, res) => {
+  try {
+    const url = req.body && req.body.url ? String(req.body.url) : undefined;
+    const r = await installer.installFromGitHub(url);
+    res.json({ ok: true, ...r, state: installer.getState() });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/admin/installer/upload', requireAdmin, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const r = await installer.installFromBuffer(req.file.buffer, req.file.originalname);
+    res.json({ ok: true, ...r, state: installer.getState() });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/admin/installer/deps', requireAdmin, (req, res) => {
+  const r = installer.installDependencies();
+  if (!r.ok) return res.status(400).json({ error: r.error });
+  res.json({ ok: true });
+});
+
+// ---------------------------------------------------------------- static
+app.get('/healthz', (req, res) => res.json({ ok: true, uptime: process.uptime() }));
+
+app.use(express.static(path.join(__dirname, 'public')));
+
+app.get('*', (req, res) => {
+  if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'Not found' });
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// ---------------------------------------------------------------- boot
+const server = app.listen(PORT, () => {
+  console.log(`\n🐞 Ladybug Cloud running on port ${PORT}`);
+  console.log(`   Admin: ${ADMIN_USERNAME}`);
+  console.log(`   Bot code installed: ${installer.getState().installed ? 'yes' : 'no'}`);
+});
+
+// Resume bots that were running before a restart
+setTimeout(() => {
+  for (const bot of db.data.bots) {
+    if (bot.status === 'running' && bot.sessionId) {
+      console.log(`[boot] Resuming bot "${bot.name}"`);
+      bots.start(bot);
+    }
+  }
+}, 3000);
+
+function shutdown() {
+  console.log('\n[shutdown] stopping bots...');
+  bots.stopAll();
+  db.flush();
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 5000);
+}
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);

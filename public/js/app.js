@@ -1,0 +1,726 @@
+/* Ladybug Cloud — frontend SPA */
+
+const state = { user: null, bots: [], limit: 1, adminTab: 'overview', logTimer: null };
+
+/* ---------------------------------------------------------------- utils */
+const $ = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function toast(msg, kind = 'ok') {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.className = `toast ${kind} show`;
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => (t.className = 'toast'), 3200);
+}
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    ...opts,
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  });
+  let data = null;
+  try { data = await res.json(); } catch (e) { data = {}; }
+  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  return data;
+}
+
+function timeAgo(ts) {
+  if (!ts) return '—';
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+}
+
+function fmtUptime(sec) {
+  const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60);
+  return [d && `${d}d`, h && `${h}h`, `${m}m`].filter(Boolean).join(' ');
+}
+
+/* ---------------------------------------------------------------- router */
+const routes = {
+  '/': renderLanding,
+  '/login': renderLogin,
+  '/register': renderRegister,
+  '/dashboard': renderDashboard,
+  '/admin': renderAdmin,
+};
+
+async function navigate() {
+  const hash = location.hash.replace('#', '') || '/';
+  const path = hash.split('?')[0];
+  if (state.logTimer) { clearInterval(state.logTimer); state.logTimer = null; }
+
+  // refresh session
+  try {
+    const r = await api('/api/auth/me');
+    state.user = r.user;
+  } catch (e) { state.user = null; }
+
+  renderNav();
+
+  const fn = routes[path] || renderLanding;
+  await fn();
+  window.scrollTo(0, 0);
+}
+
+function renderNav() {
+  const el = $('#navLinks');
+  if (state.user) {
+    el.innerHTML = `
+      <a href="#/dashboard" class="btn btn-ghost btn-sm">Dashboard</a>
+      ${state.user.isAdmin ? '<a href="#/admin" class="btn btn-ghost btn-sm">Admin</a>' : ''}
+      <span class="btn btn-ghost btn-sm hide-sm" style="cursor:default">👤 ${esc(state.user.username)}</span>
+      <button class="btn btn-sm" id="logoutBtn">Logout</button>`;
+    $('#logoutBtn').onclick = async () => {
+      await api('/api/auth/logout', { method: 'POST' });
+      toast('Logged out');
+      location.hash = '#/';
+    };
+  } else {
+    el.innerHTML = `
+      <a href="#/login" class="btn btn-ghost btn-sm">Login</a>
+      <a href="#/register" class="btn btn-primary btn-sm">Get Started Free</a>`;
+  }
+}
+
+/* ---------------------------------------------------------------- landing */
+async function renderLanding() {
+  $('#view').innerHTML = `
+  <section class="hero">
+    <div class="wrap">
+      <img src="/img/logo.png" class="hero-logo" alt="Ladybug Mini" />
+      <div class="pill"><span class="dot"></span> Free hosting · Powered by Ntandomods</div>
+      <h1 class="hero-title">Host your <span class="grad">Ladybug Mini</span><br/>WhatsApp bot in seconds</h1>
+      <p class="lead">Create a free account, paste your session ID, and we run your bot 24/7 in the cloud. No servers, no coding, no cost.</p>
+      <div class="hero-cta">
+        <a href="#/register" class="btn btn-primary">Create Free Account →</a>
+        <a href="#/login" class="btn">I already have an account</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap">
+      <div class="section-title">
+        <h2>Everything you need to run bots</h2>
+        <p>Built for the Ladybug Mini bot — simple, fast and free.</p>
+      </div>
+      <div class="grid grid-3">
+        <div class="card"><span class="ico">🚀</span><h3>Deploy in seconds</h3><p>Paste your session ID and hit start. Your bot connects to WhatsApp instantly — no setup headaches.</p></div>
+        <div class="card"><span class="ico">🆓</span><h3>Free accounts</h3><p>Sign up in under a minute with just a username and password. Your first bot is always free.</p></div>
+        <div class="card"><span class="ico">📊</span><h3>Live logs</h3><p>Watch your bot's console in real time. See exactly what's happening and debug fast.</p></div>
+        <div class="card"><span class="ico">♻️</span><h3>Auto-restart</h3><p>If your bot crashes, we bring it back automatically with smart backoff — up to 5 retries.</p></div>
+        <div class="card"><span class="ico">🔐</span><h3>Private sessions</h3><p>Every bot runs in its own isolated process and session folder. Your data stays yours.</p></div>
+        <div class="card"><span class="ico">🛠️</span><h3>Admin managed</h3><p>Bot code is installed and updated by the admin, so you always run the latest Ladybug Mini.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap">
+      <div class="section-title"><h2>How it works</h2><p>Three steps to a live bot.</p></div>
+      <div class="grid grid-4">
+        <div class="card"><h3>1 · Sign up</h3><p>Create your free account in seconds.</p></div>
+        <div class="card"><h3>2 · Add session</h3><p>Paste your Ladybug session ID from pairing.</p></div>
+        <div class="card"><h3>3 · Start</h3><p>Hit start and your bot goes online.</p></div>
+        <div class="card"><h3>4 · Relax</h3><p>We keep it running 24/7 for you.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="wrap">
+      🐞 <strong>Ladybug Cloud</strong> · Made under <strong>Ntandomods</strong><br/>
+      <span style="font-size:12px">Not affiliated with WhatsApp Inc. Use at your own risk.</span>
+    </div>
+  </footer>`;
+}
+
+/* ---------------------------------------------------------------- auth */
+function authForm(mode) {
+  const isLogin = mode === 'login';
+  return `
+  <div class="auth-wrap">
+    <div class="auth-card">
+      <img src="/img/logo.png" style="width:56px;height:56px;border-radius:14px;margin-bottom:18px" alt="Ladybug"/>
+      <h2>${isLogin ? 'Welcome back' : 'Create your free account'}</h2>
+      <p class="sub">${isLogin ? 'Log in to manage your Ladybug bots.' : 'No credit card. No limits on signup.'}</p>
+      <div class="alert alert-error" id="err"></div>
+      <form id="authForm">
+        <div class="field">
+          <label>Username</label>
+          <input class="input" name="username" autocomplete="username" required placeholder="yourname" />
+        </div>
+        ${isLogin ? '' : `<div class="field"><label>Email <span style="text-transform:none;font-weight:400">(optional)</span></label><input class="input" name="email" type="email" placeholder="you@example.com" /></div>`}
+        <div class="field">
+          <label>Password</label>
+          <input class="input" name="password" type="password" autocomplete="${isLogin ? 'current-password' : 'new-password'}" required placeholder="••••••••" />
+          ${isLogin ? '' : '<div class="hint">At least 6 characters.</div>'}
+        </div>
+        <button class="btn btn-primary btn-block" type="submit" style="margin-top:8px">${isLogin ? 'Log in' : 'Create account'}</button>
+      </form>
+      <p style="text-align:center;margin:20px 0 0;font-size:13.5px;color:var(--muted)">
+        ${isLogin ? `New here? <a href="#/register">Create an account</a>` : `Already registered? <a href="#/login">Log in</a>`}
+      </p>
+    </div>
+  </div>`;
+}
+
+async function renderLogin() {
+  if (state.user) return (location.hash = '#/dashboard');
+  $('#view').innerHTML = authForm('login');
+  bindAuth('login');
+}
+
+async function renderRegister() {
+  if (state.user) return (location.hash = '#/dashboard');
+  $('#view').innerHTML = authForm('register');
+  bindAuth('register');
+}
+
+function bindAuth(mode) {
+  const form = $('#authForm');
+  const err = $('#err');
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const btn = form.querySelector('button');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span> Please wait...';
+    err.className = 'alert alert-error';
+    try {
+      const fd = new FormData(form);
+      const body = Object.fromEntries(fd.entries());
+      await api(`/api/auth/${mode}`, { method: 'POST', body });
+      toast(mode === 'login' ? 'Welcome back!' : 'Account created!');
+      location.hash = '#/dashboard';
+    } catch (ex) {
+      err.textContent = ex.message;
+      err.className = 'alert alert-error show';
+      btn.disabled = false;
+      btn.textContent = mode === 'login' ? 'Log in' : 'Create account';
+    }
+  };
+}
+
+/* ---------------------------------------------------------------- dashboard */
+async function renderDashboard() {
+  if (!state.user) return (location.hash = '#/login');
+
+  const data = await api('/api/bots');
+  state.bots = data.bots;
+  state.limit = data.limit;
+
+  const running = state.bots.filter((b) => b.running).length;
+
+  $('#view').innerHTML = `
+  <div class="app">
+    <div class="wrap">
+      <div class="app-head">
+        <div>
+          <h1>Your Bots</h1>
+          <p>Manage and monitor your Ladybug Mini instances.</p>
+        </div>
+        <button class="btn btn-primary" id="newBotBtn">+ New Bot</button>
+      </div>
+
+      <div class="stats-row">
+        <div class="stat"><div class="k">Total Bots</div><div class="v">${state.bots.length}<span style="font-size:15px;color:var(--muted)"> / ${state.limit}</span></div></div>
+        <div class="stat"><div class="k">Running</div><div class="v" style="color:#6ee7a0">${running}</div></div>
+        <div class="stat"><div class="k">Stopped</div><div class="v">${state.bots.length - running}</div></div>
+        <div class="stat"><div class="k">Plan</div><div class="v" style="font-size:20px;text-transform:capitalize">${esc(state.user.plan)}</div></div>
+      </div>
+
+      <div id="botsGrid" class="grid grid-3">
+        ${state.bots.length ? state.bots.map(botCard).join('') : `
+          <div class="empty" style="grid-column:1/-1">
+            <div class="big">🐞</div>
+            <h3 style="margin:0 0 8px">No bots yet</h3>
+            <p style="margin:0 0 18px">Create your first Ladybug Mini bot to get started.</p>
+            <button class="btn btn-primary" onclick="openNewBot()">Create your first bot</button>
+          </div>`}
+      </div>
+    </div>
+  </div>`;
+
+  $('#newBotBtn').onclick = openNewBot;
+  bindBotActions();
+  startStatusPolling();
+}
+
+function badge(status) {
+  const map = { running: 'Running', stopped: 'Stopped', crashed: 'Crashed', starting: 'Starting', stopping: 'Stopping' };
+  return `<span class="badge badge-${status}">${map[status] || status}</span>`;
+}
+
+function botCard(b) {
+  return `
+  <div class="bot-card" data-id="${b.id}">
+    <div class="bot-top">
+      <div>
+        <div class="bot-name">🐞 ${esc(b.name)}</div>
+        <div class="bot-meta">${b.hasSession ? esc(b.sessionIdMasked) : 'no session'}</div>
+      </div>
+      ${badge(b.status)}
+    </div>
+    <div style="font-size:12.5px;color:var(--muted);line-height:1.8">
+      ${b.running ? `⏱️ Uptime: ${b.startedAt ? timeAgo(b.startedAt).replace(' ago', '') : '—'}` : `Last: ${b.stoppedAt ? timeAgo(b.stoppedAt) : 'never started'}`}<br/>
+      ♻️ Auto-restart: ${b.autoRestart ? 'on' : 'off'} · Restarts: ${b.restarts || 0}
+      ${b.lastError ? `<div style="color:#ff8095;margin-top:6px;font-size:12px">⚠️ ${esc(b.lastError)}</div>` : ''}
+    </div>
+    <div class="bot-actions">
+      ${b.running
+        ? `<button class="btn btn-sm btn-danger" data-act="stop">Stop</button>
+           <button class="btn btn-sm" data-act="restart">Restart</button>`
+        : `<button class="btn btn-sm btn-green" data-act="start">Start</button>`}
+      <button class="btn btn-sm" data-act="logs">Logs</button>
+      <button class="btn btn-sm" data-act="edit">Edit</button>
+      <button class="btn btn-sm btn-danger" data-act="delete">Delete</button>
+    </div>
+  </div>`;
+}
+
+function bindBotActions() {
+  $$('.bot-card').forEach((card) => {
+    const id = card.dataset.id;
+    card.querySelectorAll('[data-act]').forEach((btn) => {
+      btn.onclick = () => handleBotAction(id, btn.dataset.act, btn);
+    });
+  });
+}
+
+async function handleBotAction(id, act, btn) {
+  const bot = state.bots.find((b) => b.id === id);
+  if (!bot) return;
+
+  if (act === 'logs') return openLogs(bot);
+  if (act === 'edit') return openEditBot(bot);
+
+  if (act === 'delete') {
+    if (!confirm(`Delete bot "${bot.name}"? This cannot be undone.`)) return;
+    try {
+      await api(`/api/bots/${id}`, { method: 'DELETE' });
+      toast('Bot deleted');
+      renderDashboard();
+    } catch (e) { toast(e.message, 'err'); }
+    return;
+  }
+
+  btn.disabled = true;
+  const original = btn.textContent;
+  btn.innerHTML = '<span class="spin"></span>';
+  try {
+    await api(`/api/bots/${id}/${act}`, { method: 'POST' });
+    toast(act === 'start' ? 'Bot starting...' : act === 'stop' ? 'Bot stopping...' : 'Restarting...');
+    setTimeout(renderDashboard, 700);
+  } catch (e) {
+    toast(e.message, 'err');
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+}
+
+/* ---------------------------------------------------------------- modals */
+function openModal(html) {
+  $('#modal').innerHTML = html;
+  $('#modalBack').classList.add('show');
+}
+function closeModal() {
+  $('#modalBack').classList.remove('show');
+  $('#modal').innerHTML = '';
+}
+$('#modalBack') && ($('#modalBack').onclick = (e) => { if (e.target.id === 'modalBack') closeModal(); });
+
+function openNewBot() {
+  if (state.bots.length >= state.limit) {
+    return toast(`Bot limit reached (${state.limit}). Contact the admin to upgrade.`, 'err');
+  }
+  openModal(`
+    <h3>Create a new bot</h3>
+    <p class="sub">Give it a name and paste your Ladybug session ID.</p>
+    <div class="alert alert-error" id="mErr"></div>
+    <div class="field"><label>Bot Name</label><input class="input" id="mName" placeholder="My Ladybug" maxlength="40" /></div>
+    <div class="field">
+      <label>Session ID</label>
+      <textarea class="input" id="mSession" placeholder="Ladybug!H4sIA..."></textarea>
+      <div class="hint">Starts with <code>Ladybug!</code> — get it from your pairing site after scanning the QR.</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="mCreate">Create Bot</button>
+    </div>`);
+
+  $('#mCreate').onclick = async () => {
+    const name = $('#mName').value.trim();
+    const sessionId = $('#mSession').value.trim();
+    const err = $('#mErr');
+    err.className = 'alert alert-error';
+    if (!name || !sessionId) {
+      err.textContent = 'Both fields are required.';
+      err.className = 'alert alert-error show';
+      return;
+    }
+    const btn = $('#mCreate');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span>';
+    try {
+      await api('/api/bots', { method: 'POST', body: { name, sessionId } });
+      closeModal();
+      toast('Bot created!');
+      renderDashboard();
+    } catch (e) {
+      err.textContent = e.message;
+      err.className = 'alert alert-error show';
+      btn.disabled = false;
+      btn.textContent = 'Create Bot';
+    }
+  };
+}
+
+function openEditBot(bot) {
+  openModal(`
+    <h3>Edit bot</h3>
+    <p class="sub">Update the name, session ID or auto-restart setting.</p>
+    <div class="alert alert-error" id="mErr"></div>
+    <div class="field"><label>Bot Name</label><input class="input" id="mName" value="${esc(bot.name)}" maxlength="40" /></div>
+    <div class="field"><label>New Session ID <span style="text-transform:none;font-weight:400">(leave blank to keep)</span></label><textarea class="input" id="mSession" placeholder="Leave empty to keep current session"></textarea></div>
+    <div class="field">
+      <label>Auto-restart</label>
+      <select class="input" id="mAuto"><option value="true" ${bot.autoRestart ? 'selected' : ''}>Enabled</option><option value="false" ${!bot.autoRestart ? 'selected' : ''}>Disabled</option></select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="mSave">Save changes</button>
+    </div>`);
+
+  $('#mSave').onclick = async () => {
+    const body = {
+      name: $('#mName').value.trim(),
+      autoRestart: $('#mAuto').value === 'true',
+    };
+    const s = $('#mSession').value.trim();
+    if (s) body.sessionId = s;
+    const btn = $('#mSave');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span>';
+    try {
+      await api(`/api/bots/${bot.id}`, { method: 'PATCH', body });
+      closeModal();
+      toast('Saved');
+      renderDashboard();
+    } catch (e) {
+      const err = $('#mErr');
+      err.textContent = e.message;
+      err.className = 'alert alert-error show';
+      btn.disabled = false;
+      btn.textContent = 'Save changes';
+    }
+  };
+}
+
+function openLogs(bot) {
+  openModal(`
+    <h3>${esc(bot.name)} — Live logs</h3>
+    <p class="sub">Streaming console output from your bot process.</p>
+    <div class="console" id="console"><div class="ln out">Loading...</div></div>
+    <div class="modal-actions">
+      <button class="btn btn-sm" id="clearLogs">Clear</button>
+      <button class="btn" onclick="closeModal()">Close</button>
+    </div>`);
+
+  const consoleEl = $('#console');
+  const load = async () => {
+    try {
+      const r = await api(`/api/bots/${bot.id}/logs?limit=300`);
+      if (!r.logs.length) {
+        consoleEl.innerHTML = '<div class="ln out">No logs yet. Start the bot to see output.</div>';
+        return;
+      }
+      const atBottom = consoleEl.scrollHeight - consoleEl.scrollTop - consoleEl.clientHeight < 60;
+      consoleEl.innerHTML = r.logs
+        .map((l) => `<div class="ln ${l.stream === 'stderr' ? 'err' : 'out'}"><span class="ts">${new Date(l.t).toLocaleTimeString()}</span>${esc(l.line)}</div>`)
+        .join('');
+      if (atBottom) consoleEl.scrollTop = consoleEl.scrollHeight;
+    } catch (e) {
+      consoleEl.innerHTML = `<div class="ln err">${esc(e.message)}</div>`;
+    }
+  };
+  load();
+  if (state.logTimer) clearInterval(state.logTimer);
+  state.logTimer = setInterval(load, 2500);
+
+  $('#clearLogs').onclick = async () => {
+    await api(`/api/bots/${bot.id}/logs`, { method: 'DELETE' });
+    load();
+  };
+}
+
+/* ---------------------------------------------------------------- polling */
+function startStatusPolling() {
+  clearInterval(window._poll);
+  window._poll = setInterval(async () => {
+    if (location.hash !== '#/dashboard' || $('#modalBack').classList.contains('show')) return;
+    try {
+      const data = await api('/api/bots');
+      const changed = JSON.stringify(data.bots.map((b) => [b.id, b.status, b.restarts])) !==
+                      JSON.stringify(state.bots.map((b) => [b.id, b.status, b.restarts]));
+      if (changed) {
+        state.bots = data.bots;
+        const grid = $('#botsGrid');
+        if (grid) {
+          grid.innerHTML = state.bots.map(botCard).join('');
+          bindBotActions();
+        }
+      }
+    } catch (e) { /* ignore */ }
+  }, 5000);
+}
+
+/* ---------------------------------------------------------------- admin */
+async function renderAdmin() {
+  if (!state.user) return (location.hash = '#/login');
+  if (!state.user.isAdmin) return (location.hash = '#/dashboard');
+
+  $('#view').innerHTML = `
+  <div class="app">
+    <div class="wrap">
+      <div class="app-head">
+        <div><h1>Admin Panel</h1><p>Manage users, bots and the bot codebase.</p></div>
+        <span class="badge badge-running">🛡️ Admin</span>
+      </div>
+      <div class="tabs">
+        <button class="tab" data-tab="overview">Overview</button>
+        <button class="tab" data-tab="users">Users</button>
+        <button class="tab" data-tab="bots">All Bots</button>
+        <button class="tab" data-tab="installer">Bot Installer</button>
+      </div>
+      <div id="adminBody"></div>
+    </div>
+  </div>`;
+
+  $$('.tab').forEach((t) => {
+    t.onclick = () => { state.adminTab = t.dataset.tab; adminTabs(); };
+  });
+  adminTabs();
+}
+
+function adminTabs() {
+  $$('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === state.adminTab));
+  const body = $('#adminBody');
+  if (state.adminTab === 'overview') adminOverview(body);
+  if (state.adminTab === 'users') adminUsers(body);
+  if (state.adminTab === 'bots') adminBots(body);
+  if (state.adminTab === 'installer') adminInstaller(body);
+}
+
+async function adminOverview(el) {
+  el.innerHTML = '<div class="empty">Loading...</div>';
+  try {
+    const s = await api('/api/admin/stats');
+    el.innerHTML = `
+      <div class="stats-row">
+        <div class="stat"><div class="k">Users</div><div class="v">${s.users}</div></div>
+        <div class="stat"><div class="k">Bots</div><div class="v">${s.bots}</div></div>
+        <div class="stat"><div class="k">Running</div><div class="v" style="color:#6ee7a0">${s.running}</div></div>
+        <div class="stat"><div class="k">Uptime</div><div class="v" style="font-size:20px">${fmtUptime(s.uptime)}</div></div>
+      </div>
+      <div class="grid grid-3" style="margin-top:18px">
+        <div class="card"><h3>System</h3><p>Node ${esc(s.node)}<br/>${esc(s.platform)}<br/>${s.cpus} CPUs · Load ${s.loadavg.join(' / ')}</p></div>
+        <div class="card"><h3>Memory</h3><p>RSS ${s.memory.rss} MB<br/>Heap ${s.memory.heap} MB</p></div>
+        <div class="card"><h3>Bot Code</h3><p>${s.installed ? '✅ Installed' : '❌ Not installed'}<br/>Admins: ${s.admins}</p></div>
+      </div>`;
+  } catch (e) {
+    el.innerHTML = `<div class="alert alert-error show">${esc(e.message)}</div>`;
+  }
+}
+
+async function adminUsers(el) {
+  el.innerHTML = '<div class="empty">Loading...</div>';
+  try {
+    const { users } = await api('/api/admin/users');
+    el.innerHTML = `
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>User</th><th>Plan</th><th>Bots</th><th>Joined</th><th>Last login</th><th>Actions</th></tr></thead>
+          <tbody>
+            ${users.map((u) => `
+              <tr>
+                <td><strong>${esc(u.username)}</strong>${u.isAdmin ? ' <span class="badge badge-running" style="font-size:9px">admin</span>' : ''}<br/><span style="color:var(--muted);font-size:12px">${esc(u.email || '—')}</span></td>
+                <td>${esc(u.plan)}</td>
+                <td>${u.botCount} / ${u.botLimit}</td>
+                <td style="color:var(--muted)">${u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—'}</td>
+                <td style="color:var(--muted)">${u.lastLogin ? timeAgo(new Date(u.lastLogin).getTime()) : 'never'}</td>
+                <td>
+                  <button class="btn btn-sm" data-uplan="${u.id}" data-plan="${u.plan === 'pro' ? 'free' : 'pro'}">${u.plan === 'pro' ? 'Downgrade' : 'Upgrade'}</button>
+                  ${u.id !== state.user.id ? `<button class="btn btn-sm btn-danger" data-udel="${u.id}">Delete</button>` : ''}
+                </td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+    $$('[data-uplan]').forEach((b) => (b.onclick = async () => {
+      try {
+        await api(`/api/admin/users/${b.dataset.uplan}`, { method: 'PATCH', body: { plan: b.dataset.plan } });
+        toast('Plan updated');
+        adminUsers(el);
+      } catch (e) { toast(e.message, 'err'); }
+    }));
+    $$('[data-udel]').forEach((b) => (b.onclick = async () => {
+      if (!confirm('Delete this user and all their bots?')) return;
+      try {
+        await api(`/api/admin/users/${b.dataset.udel}`, { method: 'DELETE' });
+        toast('User deleted');
+        adminUsers(el);
+      } catch (e) { toast(e.message, 'err'); }
+    }));
+  } catch (e) {
+    el.innerHTML = `<div class="alert alert-error show">${esc(e.message)}</div>`;
+  }
+}
+
+async function adminBots(el) {
+  el.innerHTML = '<div class="empty">Loading...</div>';
+  try {
+    const { bots } = await api('/api/admin/bots');
+    if (!bots.length) return (el.innerHTML = '<div class="empty"><div class="big">🐞</div>No bots on the platform yet.</div>');
+    el.innerHTML = `
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Bot</th><th>Owner</th><th>Status</th><th>Restarts</th><th>Actions</th></tr></thead>
+          <tbody>
+            ${bots.map((b) => `
+              <tr>
+                <td><strong>${esc(b.name)}</strong><br/><span style="color:var(--muted);font-size:12px">${esc(b.sessionIdMasked)}</span></td>
+                <td>${esc(b.owner)}</td>
+                <td>${badge(b.status)}</td>
+                <td>${b.restarts || 0}</td>
+                <td>
+                  ${b.running ? `<button class="btn btn-sm btn-danger" data-bstop="${b.id}">Stop</button>` : ''}
+                  <button class="btn btn-sm btn-danger" data-bdel="${b.id}">Delete</button>
+                </td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+    $$('[data-bstop]').forEach((b) => (b.onclick = async () => {
+      try { await api(`/api/admin/bots/${b.dataset.bstop}/stop`, { method: 'POST' }); toast('Stopped'); adminBots(el); }
+      catch (e) { toast(e.message, 'err'); }
+    }));
+    $$('[data-bdel]').forEach((b) => (b.onclick = async () => {
+      if (!confirm('Delete this bot?')) return;
+      try { await api(`/api/admin/bots/${b.dataset.bdel}`, { method: 'DELETE' }); toast('Deleted'); adminBots(el); }
+      catch (e) { toast(e.message, 'err'); }
+    }));
+  } catch (e) {
+    el.innerHTML = `<div class="alert alert-error show">${esc(e.message)}</div>`;
+  }
+}
+
+async function adminInstaller(el) {
+  el.innerHTML = '<div class="empty">Loading...</div>';
+  const st = await api('/api/admin/installer').catch(() => ({}));
+  el.innerHTML = `
+    <div class="grid grid-3">
+      <div class="card" style="grid-column: span 2">
+        <h3>Install bot code from GitHub</h3>
+        <p style="margin-bottom:14px">Downloads the Ladybug Mini source and extracts it into the bot directory. Session folders and node_modules are preserved.</p>
+        <div class="field"><label>Archive URL</label><input class="input" id="iUrl" value="https://github.com/kids-codentando/Ladybug-Mini/archive/refs/heads/main.zip" /></div>
+        <button class="btn btn-primary" id="iGithub">Install / Update from GitHub</button>
+        <hr style="border:none;border-top:1px solid var(--border);margin:22px 0" />
+        <h3>Upload a zip</h3>
+        <p style="margin-bottom:14px">Upload your own bot build (must contain index.js at the root).</p>
+        <input type="file" id="iFile" accept=".zip" class="input" style="padding:10px" />
+        <button class="btn" id="iUpload" style="margin-top:12px">Upload & Install</button>
+      </div>
+      <div class="card">
+        <h3>Status</h3>
+        <p style="line-height:2">
+          Code installed: <strong>${st.installed ? '✅ Yes' : '❌ No'}</strong><br/>
+          Step: <strong>${esc(st.step || 'idle')}</strong><br/>
+          Last install: <strong>${st.lastInstalledAt ? new Date(st.lastInstalledAt).toLocaleString() : 'never'}</strong>
+        </p>
+        <div style="height:8px;background:rgba(255,255,255,.08);border-radius:99px;overflow:hidden;margin:14px 0">
+          <div style="height:100%;width:${st.progress || 0}%;background:linear-gradient(90deg,var(--red-2),var(--amber));transition:width .3s"></div>
+        </div>
+        <p style="font-size:12.5px;min-height:36px">${esc(st.message || '')}</p>
+        <hr style="border:none;border-top:1px solid var(--border);margin:18px 0" />
+        <h3>Dependencies</h3>
+        <p style="margin-bottom:12px">Install the bot's npm packages (needed before first run).</p>
+        <button class="btn btn-green btn-block" id="iDeps">Install Dependencies</button>
+      </div>
+    </div>`;
+
+  const poll = async () => {
+    const s = await api('/api/admin/installer').catch(() => null);
+    if (s) {
+      const p = el.querySelector('div[style*="width"]');
+      if (p) p.style.width = `${s.progress || 0}%`;
+      const msgEl = el.querySelectorAll('p')[1];
+      if (msgEl && s.message) msgEl.textContent = s.message;
+    }
+  };
+
+  $('#iGithub').onclick = async (e) => {
+    e.target.disabled = true;
+    e.target.innerHTML = '<span class="spin"></span> Installing...';
+    try {
+      await api('/api/admin/installer/github', { method: 'POST', body: { url: $('#iUrl').value.trim() } });
+      toast('Bot code installed!');
+      adminInstaller(el);
+    } catch (err) {
+      toast(err.message, 'err');
+      e.target.disabled = false;
+      e.target.textContent = 'Install / Update from GitHub';
+    }
+  };
+
+  $('#iUpload').onclick = async () => {
+    const f = $('#iFile').files[0];
+    if (!f) return toast('Choose a zip file first', 'err');
+    const fd = new FormData();
+    fd.append('file', f);
+    const btn = $('#iUpload');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span> Uploading...';
+    try {
+      const res = await fetch('/api/admin/installer/upload', { method: 'POST', body: fd, credentials: 'same-origin' });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || 'Upload failed');
+      toast('Installed!');
+      adminInstaller(el);
+    } catch (err) {
+      toast(err.message, 'err');
+      btn.disabled = false;
+      btn.textContent = 'Upload & Install';
+    }
+  };
+
+  $('#iDeps').onclick = async (e) => {
+    e.target.disabled = true;
+    e.target.innerHTML = '<span class="spin"></span> Installing deps...';
+    try {
+      await api('/api/admin/installer/deps', { method: 'POST' });
+      toast('Dependency install started — this can take a few minutes');
+      const t = setInterval(poll, 3000);
+      setTimeout(() => clearInterval(t), 600000);
+    } catch (err) {
+      toast(err.message, 'err');
+      e.target.disabled = false;
+      e.target.textContent = 'Install Dependencies';
+    }
+  };
+}
+
+/* ---------------------------------------------------------------- boot */
+window.addEventListener('hashchange', navigate);
+window.closeModal = closeModal;
+window.openNewBot = openNewBot;
+navigate();

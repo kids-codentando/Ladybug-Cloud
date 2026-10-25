@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: ladybug-cloud
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: ADMIN_USERNAME
+        value: Ntando
+      - key: ADMIN_PASSWORD
+        value: mods
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: FREE_BOT_LIMIT
+        value: "1"
+      - key: PRO_BOT_LIMIT
+        value: "10"
+      - key: DATA_DIR
+        value: /var/data
+      - key: BOT_DIR
+        value: /var/data/bots/ladybug
+    disk:
+      name: ladybug-data
+      mountPath: /var/data
+      sizeGB: 1
