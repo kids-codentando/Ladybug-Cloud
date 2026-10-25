@@ -31,12 +31,14 @@ module.exports = {
       const ownerNames = Array.isArray(config.ownerName) ? config.ownerName : [config.ownerName];
       const displayOwner = ownerNames[0] || config.ownerName || 'Bot Owner';
       
-      let menuText = `╭━━『 *${config.botName}* 』━━╮\n\n`;
-      menuText += `👋 Hello @${extra.sender.split('@')[0]}!\n\n`;
-      menuText += `⚡ Prefix: ${config.prefix}\n`;
-      menuText += `📦 Total Commands: ${commands.size}\n`;
-      menuText += `👑 Owner: ${displayOwner}\n`;
-      menuText += `🏷️ Brand: ${config.brand || 'Ntandomods'}\n\n`;
+      let menuText = `╭───「 🐞 *${config.botName}* 」───╮\n\n`;
+      menuText += `│ 👋 Hello @${extra.sender.split('@')[0]}!\n`;
+      menuText += `│ 🐞 The garden is open.\n\n`;
+      menuText += `│ ⚡ *Prefix:* ${config.prefix}\n`;
+      menuText += `│ 📦 *Commands:* ${commands.size}\n`;
+      menuText += `│ 👑 *Owner:* ${displayOwner}\n`;
+      menuText += `│ 🏷️ *Brand:* ${config.brand || 'Ntandomods'}\n`;
+      menuText += `│ ⏱️ *Awake:* ${Math.floor(process.uptime() / 60)}m\n\n`;
       
       // General Commands
       if (categories.general) {
@@ -209,9 +211,20 @@ module.exports = {
         menuText += `\n`;
       }
       
+      // Ladybug Commands (themed core commands)
+      if (categories.ladybug) {
+        menuText += `┏─────────────────\n`;
+        menuText += `┃ 🐞 LADYBUG COMMAND\n`;
+        menuText += `┗─────────────────\n`;
+        categories.ladybug.forEach(cmd => {
+          menuText += `│ ➜ ${config.prefix}${cmd.name}\n`;
+        });
+        menuText += `\n`;
+      }
+
       menuText += `╰━━━━━━━━━━━━━━━━━\n\n`;
       menuText += `💡 Type ${config.prefix}help <command> for more info\n`;
-      menuText += `🌟 ${config.botName} v2.0.0 • by ${config.brand || 'Ntandomods'}\n`;
+      menuText += `> 🐞 *${config.botName}* v2.0.0 • ${config.brand || 'Ntandomods'}\n`;
       
       // Send menu with image
       const fs = require('fs');

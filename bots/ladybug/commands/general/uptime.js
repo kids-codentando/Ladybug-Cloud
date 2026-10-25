@@ -1,40 +1,18 @@
 /**
- * Uptime Command - Display bot uptime since it was started
+ * Uptime Command — How long the Ladybug has been awake
+ * Made under Ntandomods
  */
 
 const config = require('../../config');
+const theme = require('../../utils/ladybugTheme');
 
-/**
- * Format time difference into human-readable string
- * @param {number} seconds - Total seconds of uptime
- * @returns {string} Formatted uptime string
- */
-function formatUptime(seconds) {
-  if (seconds <= 0) {
-    return '0 seconds';
+/** Turn a boot timestamp into a readable date. */
+function formatSince(startMs) {
+  try {
+    return new Date(startMs).toUTCString().replace(' GMT', ' UTC');
+  } catch (e) {
+    return 'unknown';
   }
-  
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.floor((seconds % 86400) / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = Math.floor(seconds % 60);
-  
-  const parts = [];
-  
-  if (days > 0) {
-    parts.push(`${days} ${days === 1 ? 'day' : 'days'}`);
-  }
-  if (hours > 0) {
-    parts.push(`${hours} ${hours === 1 ? 'hour' : 'hours'}`);
-  }
-  if (minutes > 0) {
-    parts.push(`${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`);
-  }
-  if (secs > 0 || parts.length === 0) {
-    parts.push(`${secs} ${secs === 1 ? 'second' : 'seconds'}`);
-  }
-  
-  return parts.join(', ');
 }
 
 module.exports = {
@@ -43,30 +21,38 @@ module.exports = {
   category: 'general',
   description: 'Show how long the bot has been running',
   usage: '.uptime',
-  
+
   async execute(sock, msg, args, extra) {
     try {
-      // Get process uptime in seconds
-      const uptimeSeconds = process.uptime();
-      const uptime = formatUptime(uptimeSeconds);
-      
-// Get bot info
-const botName = config.botName || 'Bot';
-const botVersion = 'V1.0.0';
-      
-      // Build response message
-      let message = `╭━━『 *Bot Uptime* 』━━╮\n\n`;
-    message += `🤖 *Bot Name:* ${botName}\n`;
-    message += `🧬 *Bot Version:* ${botVersion}\n`;
-      message += `⏱️ *Uptime:* ${uptime}\n`;
-      message += `\n╰━━━━━━━━━━━━━━━╯`;
-      
-      await extra.reply(message);
-      
+      const seconds = process.uptime();
+      const startedAt = Date.now() - seconds * 1000;
+      const mem = process.memoryUsage();
+
+      // Health is a friendly read on how long the bug has been flying without
+      // a restart: fresh boots look "rested", long runs look "weathered".
+      const hours = seconds / 3600;
+      let health;
+      if (hours < 1) health = { pct: 100, mood: 'Fresh out of the egg', icon: '🥚' };
+      else if (hours < 6) health = { pct: 100, mood: 'Wings warm, flying clean', icon: '🪽' };
+      else if (hours < 24) health = { pct: 92, mood: 'Steady cruise', icon: '🌿' };
+      else if (hours < 72) health = { pct: 85, mood: 'Long flight, still strong', icon: '💪' };
+      else health = { pct: 78, mood: 'Veteran of the garden', icon: '🏅' };
+
+      let text = `${theme.header('Uptime')}\n`;
+      text += `${theme.row(theme.ICON.robot, 'Bot', config.botName || 'Ladybug Mini')}\n`;
+      text += `${theme.row(theme.ICON.dna, 'Version', '2.0.0')}\n`;
+      text += `${theme.row(theme.ICON.clock, 'Awake for', `*${theme.humanDuration(seconds)}*`)}\n`;
+      text += `${theme.row(theme.ICON.sparkle, 'Since', formatSince(startedAt))}\n`;
+      text += `${theme.divider()}\n`;
+      text += `${theme.row(theme.ICON.leaf, 'Health', theme.bar(health.pct, 100))}\n`;
+      text += `${theme.row(health.icon, 'Mood', health.mood)}\n`;
+      text += `${theme.row(theme.ICON.ram, 'Memory', theme.humanBytes(mem.rss))}\n`;
+      text += theme.footer();
+
+      await extra.reply(text);
     } catch (error) {
       console.error('Error in uptime command:', error);
-      await extra.reply('❌ An error occurred while fetching uptime information. Please try again later.');
+      await extra.reply(`${theme.ICON.cross} *Uptime failed:* ${error.message}`);
     }
-  }
+  },
 };
-
