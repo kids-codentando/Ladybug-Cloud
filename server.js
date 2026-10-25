@@ -16,6 +16,7 @@ const os = require('os');
 const db = require('./lib/store');
 const bots = require('./lib/bots');
 const installer = require('./lib/installer');
+const sessiongen = require('./lib/sessiongen');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -269,6 +270,65 @@ app.delete('/api/bots/:id/logs', requireAuth, (req, res) => {
   if (!bot) return;
   bots.clearLogs(bot.id);
   res.json({ ok: true });
+});
+
+// ---------------------------------------------------------------- sessions
+// In-browser session generator: request a pairing code, then poll for the
+// finished `Ladybug!...` session id.
+app.post('/api/session/pair', requireAuth, (req, res) => {
+  try {
+    const job = sessiongen.start((req.body || {}).phone);
+    res.json({ ok: true, job });
+  } catch (e) {
+    res.status(e.status || 500).json({ error: e.message });
+  }
+});
+
+app.get('/api/session/pair/:id', requireAuth, (req, res) => {
+  const job = sessiongen.get(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Pairing job not found or expired.' });
+  res.json({ job });
+});
+
+app.delete('/api/session/pair/:id', requireAuth, (req, res) => {
+  sessiongen.cancel(req.params.id);
+  res.json({ ok: true });
+});
+
+// ---------------------------------------------------------------- public status
+app.get('/api/status', (req, res) => {
+  const allBots = db.listBots();
+  const users = db.data.users || [];
+  const running = allBots.filter((b) => bots.status(b.id).running).length;
+  const installed = bots.botCodeInstalled();
+  res.json({
+    ok: true,
+    platform: 'Ladybug Cloud',
+    brand: 'Ntandomods',
+    uptime: Math.round(process.uptime()),
+    installed,
+    stats: {
+      users: users.length,
+      bots: allBots.length,
+      running,
+      stopped: allBots.length - running,
+    },
+    bots: allBots
+      .map((b) => {
+        const st = bots.status(b.id);
+        return {
+          id: b.id,
+          name: b.name,
+          status: st.status,
+          running: st.running,
+          startedAt: st.startedAt,
+          uptime: st.startedAt ? Math.round((Date.now() - st.startedAt) / 1000) : 0,
+        };
+      })
+      .sort((a, b) => Number(b.running) - Number(a.running))
+      .slice(0, 50),
+    generatedAt: new Date().toISOString(),
+  });
 });
 
 // ---------------------------------------------------------------- admin

@@ -12,6 +12,8 @@ Built by **Ntandomods** · Deployable on **Render** in one click.
 | --- | --- |
 | **Free accounts** | Public registration with bcrypt-hashed passwords and cookie sessions |
 | **Session IDs** | Each user pastes their own `Ladybug!...` session; stored per-user and injected as `SESSION_ID` |
+| **⚡ In-browser pairing** | Users generate a session themselves: enter a phone number, get an 8-digit WhatsApp pairing code, session is built automatically — no local setup |
+| **📊 Public status page** | `/status` shows live platform health, running bots, uptime and per-bot status (session IDs never exposed) |
 | **Isolation** | One `node index.js` process per bot, separate `session_<botId>` folder, separate temp dir |
 | **Control** | Start / stop / restart, auto-restart with backoff (5 attempts), live status badges |
 | **Logs** | 600-line ring buffer per bot, streamed to a live console in the dashboard |
@@ -77,13 +79,15 @@ curl -b cookies.txt -X POST localhost:3000/api/admin/installer/deps
 
 ## 🔑 Getting a session ID
 
-A session ID is produced by the bot itself the first time it links to WhatsApp (pairing code / QR). It looks like:
+Users don't need to run anything locally. In **Dashboard → New Bot** they enter their phone number with country code and click **Get code**. The platform asks WhatsApp for a pairing code, shows it in the browser, and once the user enters it under *WhatsApp → Linked devices → Link with phone number*, the session is generated and filled in automatically.
+
+A session ID looks like:
 
 ```
-Ladybug!H4sIAAAAAAAA...   (base64 of gzipped creds)
+Ladybug!H4sIAAAAAAAA...   (base64 of gzipped creds.json)
 ```
 
-Users paste that into **Dashboard → New Bot → Session ID**. The host never displays it again — only a masked preview.
+It can also be pasted manually if the user already has one. The host only ever shows a masked preview afterwards.
 
 ---
 
@@ -94,6 +98,8 @@ server.js            Express app + all routes
 lib/store.js         JSON datastore (atomic writes, debounced)
 lib/bots.js          Process manager (spawn/stop/restart, logs, auto-restart)
 lib/installer.js     GitHub/ZIP installer + npm dependency runner
+lib/sessiongen.js    Pairing job manager (in-browser session generation)
+lib/sessiongen-worker.js  Baileys worker that requests the pairing code
 public/              Vanilla JS SPA (landing, auth, dashboard, admin)
 bots/ladybug/        Installed bot code (gitignored, runtime)
 data/                db.json (gitignored, runtime)
@@ -106,6 +112,8 @@ render.yaml          Render blueprint
 
 **Auth** `POST /api/auth/register|login|logout`, `GET /api/auth/me`
 **Bots** `GET|POST /api/bots`, `PATCH|DELETE /api/bots/:id`, `POST /api/bots/:id/start|stop|restart`, `GET|DELETE /api/bots/:id/logs`
+**Sessions** `POST /api/session/pair` (body `{phone}`), `GET|DELETE /api/session/pair/:id`
+**Public** `GET /api/status`, `GET /healthz`
 **Admin** `GET /api/admin/stats|users|bots|installer`, `PATCH|DELETE /api/admin/users/:id`, `DELETE /api/admin/bots/:id`, `POST /api/admin/installer/github|upload|deps`
 
 ---

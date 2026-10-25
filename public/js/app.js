@@ -51,6 +51,7 @@ const routes = {
   '/login': renderLogin,
   '/register': renderRegister,
   '/dashboard': renderDashboard,
+  '/status': renderStatus,
   '/admin': renderAdmin,
 };
 
@@ -77,6 +78,7 @@ function renderNav() {
   if (state.user) {
     el.innerHTML = `
       <a href="#/dashboard" class="btn btn-ghost btn-sm">Dashboard</a>
+      <a href="#/status" class="btn btn-ghost btn-sm">Status</a>
       ${state.user.isAdmin ? '<a href="#/admin" class="btn btn-ghost btn-sm">Admin</a>' : ''}
       <span class="btn btn-ghost btn-sm hide-sm" style="cursor:default">👤 ${esc(state.user.username)}</span>
       <button class="btn btn-sm" id="logoutBtn">Logout</button>`;
@@ -87,6 +89,7 @@ function renderNav() {
     };
   } else {
     el.innerHTML = `
+      <a href="#/status" class="btn btn-ghost btn-sm">Status</a>
       <a href="#/login" class="btn btn-ghost btn-sm">Login</a>
       <a href="#/register" class="btn btn-primary btn-sm">Get Started Free</a>`;
   }
@@ -345,18 +348,102 @@ function openNewBot() {
   }
   openModal(`
     <h3>Create a new bot</h3>
-    <p class="sub">Give it a name and paste your Ladybug session ID.</p>
+    <p class="sub">Pair a number in the browser, or paste an existing session ID.</p>
     <div class="alert alert-error" id="mErr"></div>
     <div class="field"><label>Bot Name</label><input class="input" id="mName" placeholder="My Ladybug" maxlength="40" /></div>
+
+    <div class="pair-box">
+      <div class="pair-head">⚡ Generate a session — no setup needed</div>
+      <div class="pair-row">
+        <input class="input" id="mPhone" placeholder="Phone with country code e.g. 27821234567" inputmode="numeric" />
+        <button class="btn btn-primary btn-sm" id="mPair">Get code</button>
+      </div>
+      <div id="mPairOut" class="pair-out"></div>
+      <div class="hint">Open WhatsApp → <b>Linked devices</b> → <b>Link with phone number</b> and enter the code.</div>
+    </div>
+
     <div class="field">
       <label>Session ID</label>
       <textarea class="input" id="mSession" placeholder="Ladybug!H4sIA..."></textarea>
-      <div class="hint">Starts with <code>Ladybug!</code> — get it from your pairing site after scanning the QR.</div>
+      <div class="hint">Filled automatically after pairing, or paste one that starts with <code>Ladybug!</code>.</div>
     </div>
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">Cancel</button>
       <button class="btn btn-primary" id="mCreate">Create Bot</button>
     </div>`);
+
+  let pairTimer = null;
+  let pairJob = null;
+
+  const stopPolling = () => {
+    if (pairTimer) { clearInterval(pairTimer); pairTimer = null; }
+  };
+  // stop polling if the modal is dismissed
+  const back = $('#modalBack');
+  const prevClick = back.onclick;
+  back.onclick = (e) => {
+    if (e.target.id === 'modalBack') { stopPolling(); pairJob && api(`/api/session/pair/${pairJob}`, { method: 'DELETE' }).catch(() => {}); }
+    prevClick && prevClick(e);
+  };
+
+  $('#mPair').onclick = async () => {
+    const phone = $('#mPhone').value.replace(/[^0-9]/g, '');
+    const out = $('#mPairOut');
+    if (phone.length < 7) {
+      out.innerHTML = '<div class="pair-err">Enter a valid number with country code.</div>';
+      return;
+    }
+    stopPolling();
+    const btn = $('#mPair');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span>';
+    out.innerHTML = '<div class="pair-wait">Starting WhatsApp pairing…</div>';
+    try {
+      const { job } = await api('/api/session/pair', { method: 'POST', body: { phone } });
+      pairJob = job.id;
+      renderPair(job);
+      pairTimer = setInterval(async () => {
+        try {
+          const r = await api(`/api/session/pair/${job.id}`);
+          renderPair(r.job);
+          if (r.job.status === 'ready' || r.job.status === 'error') {
+            stopPolling();
+            btn.disabled = false;
+            btn.textContent = 'Get code';
+          }
+        } catch (e) {
+          stopPolling();
+          btn.disabled = false;
+          btn.textContent = 'Get code';
+          out.innerHTML = `<div class="pair-err">${esc(e.message)}</div>`;
+        }
+      }, 2000);
+    } catch (e) {
+      btn.disabled = false;
+      btn.textContent = 'Get code';
+      out.innerHTML = `<div class="pair-err">${esc(e.message)}</div>`;
+    }
+  };
+
+  function renderPair(job) {
+    const out = $('#mPairOut');
+    if (!out) return;
+    if (job.status === 'ready') {
+      $('#mSession').value = job.sessionId;
+      const who = job.me && job.me.id ? String(job.me.id).split(':')[0].split('@')[0] : job.phone;
+      out.innerHTML = `<div class="pair-ok">✅ Paired as <b>${esc(who)}</b> — session filled in below.</div>`;
+      toast('Session generated!');
+    } else if (job.status === 'error') {
+      out.innerHTML = `<div class="pair-err">⚠️ ${esc(job.message || 'Pairing failed.')}</div>`;
+    } else if (job.code) {
+      out.innerHTML = `
+        <div class="pair-code-label">Your pairing code</div>
+        <div class="pair-code">${esc(String(job.code).replace(/(.{4})(?=.)/g, '$1 '))}</div>
+        <div class="pair-wait">${esc(job.message || 'Waiting for you to enter the code…')}</div>`;
+    } else {
+      out.innerHTML = `<div class="pair-wait">${esc(job.message || 'Connecting…')}</div>`;
+    }
+  }
 
   $('#mCreate').onclick = async () => {
     const name = $('#mName').value.trim();
@@ -373,6 +460,7 @@ function openNewBot() {
     btn.innerHTML = '<span class="spin"></span>';
     try {
       await api('/api/bots', { method: 'POST', body: { name, sessionId } });
+      stopPolling();
       closeModal();
       toast('Bot created!');
       renderDashboard();
@@ -482,6 +570,65 @@ function startStatusPolling() {
       }
     } catch (e) { /* ignore */ }
   }, 5000);
+}
+
+/* ---------------------------------------------------------------- status */
+async function renderStatus() {
+  $('#view').innerHTML = `
+  <section class="section" style="padding-top:48px">
+    <div class="wrap">
+      <div class="status-head">
+        <div>
+          <h2 style="margin-bottom:6px">Platform Status</h2>
+          <p class="sub" style="margin:0">Live view of Ladybug Cloud and the bots running on it.</p>
+        </div>
+        <div id="statusPill" class="pill"><span class="dot"></span> Checking…</div>
+      </div>
+      <div class="stats-grid" id="statusStats"></div>
+      <div class="card" style="margin-top:24px">
+        <div class="card-head">
+          <h3>Running bots</h3>
+          <span class="muted" id="statusUpdated" style="font-size:12.5px"></span>
+        </div>
+        <div id="statusBots"><div class="muted" style="padding:16px 0">Loading…</div></div>
+      </div>
+      <p class="muted" style="text-align:center;margin-top:22px;font-size:12.5px">
+        Bot names are shown publicly; session IDs are never exposed.
+      </p>
+    </div>
+  </section>`;
+
+  async function load() {
+    let d;
+    try {
+      d = await api('/api/status');
+    } catch (e) {
+      $('#statusPill').innerHTML = '<span class="dot" style="background:#ff2d55"></span> Unreachable';
+      $('#statusBots').innerHTML = `<div class="pair-err">${esc(e.message)}</div>`;
+      return;
+    }
+    const healthy = d.ok;
+    $('#statusPill').innerHTML = `<span class="dot" style="background:${healthy ? '#22c55e' : '#ff2d55'}"></span> ${healthy ? 'All systems operational' : 'Degraded'}`;
+    $('#statusStats').innerHTML = `
+      <div class="stat"><div class="stat-label">Running</div><div class="stat-value" style="color:#22c55e">${d.stats.running}</div></div>
+      <div class="stat"><div class="stat-label">Total bots</div><div class="stat-value">${d.stats.bots}</div></div>
+      <div class="stat"><div class="stat-label">Users</div><div class="stat-value">${d.stats.users}</div></div>
+      <div class="stat"><div class="stat-label">Host uptime</div><div class="stat-value">${fmtUptime(d.uptime)}</div></div>`;
+
+    const rows = (d.bots || []).map((b) => `
+      <div class="status-row">
+        <div class="status-name">🐞 ${esc(b.name)}</div>
+        <div class="status-mid">${b.running ? `⏱️ up ${fmtUptime(b.uptime)}` : 'offline'}</div>
+        ${badge(b.status)}
+      </div>`).join('');
+
+    $('#statusBots').innerHTML = rows || '<div class="muted" style="padding:16px 0">No bots yet — be the first to host one.</div>';
+    $('#statusUpdated').textContent = `updated ${new Date(d.generatedAt).toLocaleTimeString()}`;
+  }
+
+  await load();
+  if (state.logTimer) clearInterval(state.logTimer);
+  state.logTimer = setInterval(load, 10000);
 }
 
 /* ---------------------------------------------------------------- admin */
