@@ -187,6 +187,17 @@ app.post('/api/bots', requireAuth, (req, res) => {
   if (!name || !String(name).trim()) return res.status(400).json({ error: 'Bot name is required' });
   if (!sessionId || !String(sessionId).trim()) return res.status(400).json({ error: 'Session ID is required' });
 
+  // One WhatsApp session = one connection. Reusing a session across bots makes
+  // WhatsApp answer with "Stream Errored (conflict)" and both bots flap forever.
+  const clash = db
+    .listBots()
+    .find((b) => b.sessionId && b.sessionId === String(sessionId).trim());
+  if (clash) {
+    return res.status(409).json({
+      error: `That session ID is already used by the bot "${clash.name}". Each bot needs its own WhatsApp session.`,
+    });
+  }
+
   const bot = {
     id: uid(),
     userId: req.user.id,
@@ -219,7 +230,16 @@ app.patch('/api/bots/:id', requireAuth, (req, res) => {
   const patch = {};
   if (req.body.name) patch.name = String(req.body.name).trim().slice(0, 40);
   if (typeof req.body.sessionId === 'string' && req.body.sessionId.trim()) {
-    patch.sessionId = req.body.sessionId.trim();
+    const nextSession = req.body.sessionId.trim();
+    const clash = db
+      .listBots()
+      .find((b) => b.id !== bot.id && b.sessionId && b.sessionId === nextSession);
+    if (clash) {
+      return res.status(409).json({
+        error: `That session ID is already used by the bot "${clash.name}". Each bot needs its own WhatsApp session.`,
+      });
+    }
+    patch.sessionId = nextSession;
   }
   if (typeof req.body.autoRestart === 'boolean') patch.autoRestart = req.body.autoRestart;
   db.updateBot(bot.id, patch);
@@ -237,6 +257,17 @@ app.delete('/api/bots/:id', requireAuth, (req, res) => {
 app.post('/api/bots/:id/start', requireAuth, (req, res) => {
   const bot = ownBot(req, res);
   if (!bot) return;
+
+  // Safety net: if another bot is still running on the same session, stop it
+  // first. Two sockets on one session always end in a conflict loop.
+  const twin = db
+    .listBots()
+    .find((b) => b.id !== bot.id && b.sessionId && b.sessionId === bot.sessionId);
+  if (twin && bots.status(twin.id).running) {
+    bots.stop(twin.id);
+    db.updateBot(twin.id, { status: 'stopped' });
+  }
+
   db.updateBot(bot.id, { status: 'running' });
   const r = bots.start(db.findBotById(bot.id));
   if (!r.ok) return res.status(400).json({ error: r.error });
